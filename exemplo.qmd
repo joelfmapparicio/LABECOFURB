@@ -1,0 +1,174 @@
+---
+title: "Joel Fernando Maciel Apparicio"
+format: html
+editor: visual
+---
+
+```{r}
+#| label: load-packages
+#| include: false
+
+library(tidyverse)
+library(WDI)
+library(ggplot2)
+library(dplyr)
+library(scales)
+library(countrycode)
+library(ggthemes)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(plotly) # <- ADICIONADO PARA GRÁFICOS INTERATIVOS
+library(leaflet)
+library(RColorBrewer)
+
+#install.packages("ggthemes")
+#install.packages("rnaturalearthdata")
+#install.packages("rnaturalearth")
+
+options(scipen = 999) # REMOVER A NOT. CIENT.
+
+#| label: load-data
+
+# 1. Baixar os dados de exportação (% do PIB)
+exportdata <- WDI(
+  country = "all", 
+  indicator = "NE.EXP.GNFS.ZS",
+  start = 1990, end = 2022,
+  extra = TRUE
+) %>% filter(region != "Aggregates")
+
+paises <- c("Brazil", "Germany", "China", "United States")
+
+exportdata <- exportdata %>%
+  mutate(decada = paste0(floor(year / 10) * 10, "s"))
+
+# Último ano disponível
+latest_export <- exportdata %>%
+  group_by(iso3c) %>%
+  filter(year == max(year, na.rm = TRUE)) %>%
+  ungroup()
+
+# Mapa mundi
+world <- ne_countries(scale = "medium", returnclass = "sf")
+map_data <- left_join(world, latest_export, by = c("iso_a3" = "iso3c"))
+
+# Dados para corte transversal
+dados_cross <- WDI(
+  indicator = c("NE.EXP.GNFS.ZS", "NY.GDP.PCAP.CD"),
+  start = 2022, end = 2022,
+  extra = TRUE
+) %>% filter(region != "Aggregates")
+
+# Criar paleta de cores
+pal <- colorNumeric(
+  palette = "Plasma", 
+  domain = map_data$NE.EXP.GNFS.ZS,
+  na.color = "#CCCCCC"
+)
+
+# Criar pop-up com nome do país e valor
+popup_text <- paste0(
+  "<strong>", map_data$name_long, "</strong><br>",
+  "Exportações (% do PIB): ",
+  ifelse(is.na(map_data$NE.EXP.GNFS.ZS), "Sem dados", 
+         paste0(round(map_data$NE.EXP.GNFS.ZS, 1), "%"))
+)
+
+```
+
+## Exportações de bens e serviços (Em Dólar)
+
+Neste trabalho, escolhi analisar a variável de Exportações de Bens e Serviços, que representa tudo aquilo que um país vende para outros países — como alimentos, máquinas, minérios, petróleo, além de serviços como turismo e tecnologia.
+
+Os valores estão expressos em dólar americano, a principal moeda usada no comércio internacional, o que permite comparar os dados entre diferentes países e ao longo dos anos.
+
+Os dados utilizados foram obtidos através do WDI (World Development Indicators), uma base mantida pelo Banco Mundial que reúne informações econômicas e sociais de diversos países.
+
+Essa variável é importante porque mostra como a economia de um país está inserida no comércio global e o quanto ela depende ou se beneficia das exportações.
+
+## Gráfico em Painel – Evolução das Exportações de Bens e Serviços (1960 - Atual):
+
+O gráfico mostra a evolução das exportações globais desde 1960. A linha verde representa a China, que teve o maior crescimento recente e se tornou a maior exportadora do mundo. A linha amarela destaca os Estados Unidos como maior exportador histórico. A linha azul mostra o Brasil, com crescimento estável ao longo dos anos. Já a linha vermelha indica Tuvalu, o menor exportador da história, com números praticamente inexpressivos.
+
+Esse tipo de gráfico é importante para análises econômicas porque mostra a evolução histórica das exportações, permitindo identificar tendências de crescimento, mudanças de liderança e o impacto de eventos globais no comércio internacional.
+
+```{r}
+#| label: graficodadosempainel
+#| warning: false
+#| echo: false
+
+# CORTE TRANSVERSAL
+plotly::plot_ly(data = exportdata %>% filter(country %in% paises),
+                x = ~year, y = ~NE.EXP.GNFS.ZS, 
+                color = ~country, 
+                type = 'scatter', mode = 'lines+markers',
+                hoverinfo = 'text',
+                text = ~paste(country, "<br>Ano:", year, "<br>Exportações (% PIB):", round(NE.EXP.GNFS.ZS,1))
+) %>%
+  layout(title = "Exportações (% do PIB) - 1990 a 2022",
+         xaxis = list(title = "Ano"),
+         yaxis = list(title = "Exportações (% do PIB)"),
+         legend = list(title=list(text="País")))
+```
+
+## Grafico de dados de Corte Transversal -Top 50 Exportadores Mundiais em 2023:
+
+Este gráfico apresenta os 50 países que mais exportaram em 2023. A China (linha verde) lidera o ranking com folga, reforçando sua posição como principal exportadora global. O Brasil (linha azul) aparece em 26º lugar, destacando-se entre os países emergentes. Já o Peru (linha vermelha) ocupa a 50ª posição, sendo o menor exportador dentro do grupo analisado.\
+
+Esse tipo de gráfico é essencial para análises econômicas, pois permite comparações diretas entre países, identificando sua relevância no comércio internacional em determinado período.
+
+```{r}
+#| label: graficocortetransversal
+#| warning: false
+#| echo: false
+
+plotly::plot_ly(data = dados_cross,
+                x = ~NY.GDP.PCAP.CD, y = ~NE.EXP.GNFS.ZS,
+                type = 'scatter', mode = 'markers',
+                text = ~paste(country, "<br>PIB per capita: US$", round(NY.GDP.PCAP.CD,0),
+                              "<br>Exportações (% PIB):", round(NE.EXP.GNFS.ZS,1)),
+                color = ~region,
+                marker = list(size = 7)
+) %>%
+  layout(title = "Exportações vs PIB per capita (2022)",
+         xaxis = list(title = "PIB per capita (US$)", type = "log"),
+         yaxis = list(title = "Exportações (% do PIB)"),
+         legend = list(title=list(text="Região")))
+```
+
+## Gráfico de dados de Série Temporal - Exportações do Brasil a partir de 1975:
+
+O gráfico mostra a evolução das exportações brasileiras de 1975 até os dias atuais. O destaque em verde representa 2023, ano com o maior valor exportado da história do país. Já a linha vermelha marca 1975, com o menor valor registrado no período.
+
+Esse tipo de gráfico é fundamental para análises econômicas porque permitem observar a trajetória de um único país ao longo do tempo. No caso do Brasil, é possível identificar o ritmo de crescimento das exportações, momentos de queda e picos históricos, como em 2023. Esse tipo de visualização ajuda a entender como fatores internos e externos influenciaram o desempenho econômico ao longo das décadas.
+
+```{r}
+#| label: graficoserietemporal
+#| warning: false
+#| echo: false
+
+leaflet(map_data) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolygons(
+    fillColor = ~pal(NE.EXP.GNFS.ZS),
+    color = "white", weight = 0.3,
+    fillOpacity = 0.8,
+    smoothFactor = 0.3,
+    label = lapply(popup_text, htmltools::HTML),
+    highlight = highlightOptions(
+      weight = 2,
+      color = "#666",
+      fillOpacity = 0.9,
+      bringToFront = TRUE
+    )
+  ) %>%
+  addLegend(
+    pal = pal,
+    values = ~NE.EXP.GNFS.ZS,
+    title = "Exportações (% do PIB)",
+    position = "bottomright"
+  )
+
+  fillColor = ~pal(NE.EXP.GNFS.ZS) 
+```
