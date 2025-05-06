@@ -1,0 +1,236 @@
+---
+title: "Joel Fernando Maciel Apparicio"
+format: html
+editor: visual
+---
+
+```{r}
+#| label: load-packages
+#| include: false
+
+library(tidyverse)
+library(WDI)
+library(ggplot2)
+library(dplyr)
+library(scales)
+library(countrycode)
+library(ggthemes)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(plotly) # <- ADICIONADO PARA GRÁFICOS INTERATIVOS
+library(leaflet)
+library(RColorBrewer)
+library(gapminder) 
+#install.packages("ggthemes")
+#install.packages("rnaturalearthdata")
+#install.packages("rnaturalearth")
+
+options(scipen = 999) # REMOVER A NOT. CIENT.
+
+#| label: load-data
+
+# 1. Baixar os dados de exportação (% do PIB)
+exportdata <- WDI(
+  country = "all", 
+  indicator = "NE.EXP.GNFS.ZS",
+  start = 1990, end = 2022,
+  extra = TRUE
+) %>% filter(region != "Aggregates")
+
+paises <- c("Brazil", "Germany", "China", "United States")
+
+exportdata <- exportdata %>%
+  mutate(decada = paste0(floor(year / 10) * 10, "s"))
+
+# Último ano disponível
+latest_export <- exportdata %>%
+  group_by(iso3c) %>%
+  filter(year == max(year, na.rm = TRUE)) %>%
+  ungroup()
+
+# Mapa mundi
+world <- ne_countries(scale = "medium", returnclass = "sf")
+map_data <- left_join(world, latest_export, by = c("iso_a3" = "iso3c"))
+
+# Dados para corte transversal
+dados_cross <- WDI(
+  indicator = c("NE.EXP.GNFS.ZS", "NY.GDP.PCAP.CD"),
+  start = 2022, end = 2022,
+  extra = TRUE
+) %>% filter(region != "Aggregates")
+
+# Criar paleta de cores
+pal <- colorNumeric(
+  palette = "Plasma", 
+  domain = map_data$NE.EXP.GNFS.ZS,
+  na.color = "#CCCCCC"
+)
+
+# Criar pop-up com nome do país e valor
+popup_text <- paste0(
+  "<strong>", map_data$name_long, "</strong><br>",
+  "Exportações (% do PIB): ",
+  ifelse(is.na(map_data$NE.EXP.GNFS.ZS), "Sem dados", 
+         paste0(round(map_data$NE.EXP.GNFS.ZS, 1), "%"))
+)
+
+```
+
+## Exportações de bens e serviços (Em Dólar)
+
+Neste trabalho, escolhi analisar a variável de Exportações de Bens e Serviços, que representa tudo aquilo que um país vende para outros países — como alimentos, máquinas, minérios, petróleo, além de serviços como turismo e tecnologia.
+
+Os valores estão expressos em dólar americano, a principal moeda usada no comércio internacional, o que permite comparar os dados entre diferentes países e ao longo dos anos.
+
+Os dados utilizados foram obtidos através do WDI (World Development Indicators), uma base mantida pelo Banco Mundial que reúne informações econômicas e sociais de diversos países.
+
+Essa variável é importante porque mostra como a economia de um país está inserida no comércio global e o quanto ela depende ou se beneficia das exportações.
+
+## Gráfico 1: Evolução das Exportações (% do PIB) – 1990 a 2022:
+
+**Descrição do gráfico:**\
+Gráfico de linhas interativas com os países: Brasil, China, Alemanha e Estados Unidos. O eixo x mostra os anos de 1990 a 2022, e o eixo y indica o valor das exportações como porcentagem do PIB.
+
+**Análise econômica:**
+
+**China:**\
+A curva da China mostra uma **aceleração marcante no início dos anos 2000**, compatível com sua entrada na OMC (2001) e um processo intenso de industrialização orientada à exportação. Isso reflete a expansão da manufatura e a atração de investimentos estrangeiros.
+
+**Alemanha:**\
+Mantém-se consistentemente com **altos níveis de exportação em relação ao PIB**. Isso reflete o modelo econômico alemão baseado na exportação de produtos industriais de alta qualidade, especialmente máquinas, automóveis e produtos químicos.
+
+**Estados Unidos:**\
+Os EUA apresentam uma linha relativamente **estável e inferior** (em % do PIB), o que não indica fraqueza, mas sim uma **economia muito voltada ao consumo doméstico**, com menor dependência externa.
+
+**Brasil:**\
+Exibe **oscilações moderadas** com tendência de crescimento tímido. Momentos de elevação coincidem com ciclos de alta de commodities, como no início dos anos 2000. A taxa relativamente baixa indica **baixa inserção internacional** e **concentração em exportações primárias**.
+
+**Conclusão:**\
+O gráfico revela estratégias econômicas distintas. Países como China e Alemanha se destacam por modelos orientados à exportação, enquanto EUA e Brasil demonstram menor dependência do comércio exterior — cada qual por razões estruturais distintas.
+
+```{r}
+#| label: graficodadosempainel
+#| warning: false
+#| echo: false
+
+df <- as.data.frame(gapminder)
+
+# Criando gráfico com linhas e pontos
+fig <- df %>%
+  plot_ly(
+    x = ~gdpPercap,
+    y = ~lifeExp,
+    color = ~continent,
+    frame = ~year,
+    text = ~country,
+    type = 'scatter',
+    mode = 'lines+markers',  # ← aqui está a diferença!
+    line = list(width = 1),
+    marker = list(size = 10, line = list(width = 0.5, color = '#FFFFFF'))
+  ) %>%
+  layout(
+    title = "Evolução da Expectativa de Vida vs PIB per Capita (com linhas)",
+    xaxis = list(type = "log", title = "PIB per capita (log)"),
+    yaxis = list(title = "Expectativa de vida"),
+    hovermode = "closest"
+  )
+
+fig
+```
+
+## Gráfico 2: Corte Transversal – Exportações (% PIB) vs PIB per capita (Top 50 Exportadores – 2023):
+
+**Descrição do gráfico:**\
+Gráfico de dispersão (scatter plot) com os 50 maiores exportadores. O eixo x mostra o PIB per capita (US\$), e o eixo y mostra as exportações como % do PIB. Cada ponto representa um país.
+
+**Análise econômica:**
+
+**Relação entre variáveis:**\
+Não parece haver uma relação linear clara entre PIB per capita e exportações como % do PIB. **Alguns países ricos têm baixo % de exportações (como EUA), enquanto outros (como Alemanha ou Coreia do Sul) têm exportações elevadas.**
+
+**Padrões visuais:**
+
+**Alta % de exportações e alto PIB per capita** → países industrializados com vocação exportadora (Alemanha, Suíça, Coreia).
+
+**Alta % de exportações e baixo PIB per capita** → economias dependentes de commodities ou manufatura terceirizada (Vietnã, Bangladesh).
+
+**Baixa % de exportações e alto PIB per capita** → economias grandes e fechadas como os EUA.
+
+**Região central (Brasil, México, África do Sul)** → economias emergentes com inserção média no comércio.
+
+**Desigualdade estrutural:**\
+A dispersão mostra que o comércio internacional não distribui riqueza igualmente — países podem exportar muito, mas ainda terem baixo PIB per capita, revelando **modelos econômicos baseados em exportações de baixo valor agregado**.
+
+**Conclusão:**\
+Esse gráfico destaca como a **estrutura produtiva e o grau de sofisticação das exportações** influenciam a renda, além de mostrar que **ser exportador não garante desenvolvimento**, dependendo da natureza do que se exporta.
+
+```{r}
+#| label: graficocortetransversal
+#| warning: false
+#| echo: false
+
+plotly::plot_ly(data = dados_cross,
+                x = ~NY.GDP.PCAP.CD, y = ~NE.EXP.GNFS.ZS,
+                type = 'scatter', mode = 'markers',
+                text = ~paste(country, "<br>PIB per capita: US$", round(NY.GDP.PCAP.CD,0),
+                              "<br>Exportações (% PIB):", round(NE.EXP.GNFS.ZS,1)),
+                color = ~region,
+                marker = list(size = 7)
+) %>%
+  layout(title = "Exportações vs PIB per capita (2022)",
+         xaxis = list(title = "PIB per capita (US$)", type = "log"),
+         yaxis = list(title = "Exportações (% do PIB)"),
+         legend = list(title=list(text="Região")))
+```
+
+## Mapa Interativo – Exportações (% do PIB) por País (2022):
+
+Este gráfico usa o `leaflet` para apresentar um **mapa interativo mundial**, com países coloridos conforme o percentual de exportações sobre o PIB.
+
+#### Interpretação Econômica:
+
+**Cores mais fortes** indicam países com alta dependência do setor externo — como **Singapura**, **Emirados Árabes Unidos**, ou **Vietnã**, onde exportações chegam a representar mais de 100% do PIB (devido à reexportação e integração a cadeias globais).
+
+**Cores mais claras** aparecem em economias grandes e mais fechadas, como **Brasil**, **Índia** ou **Estados Unidos**, onde a participação das exportações no PIB é menor.
+
+#### Utilidade:
+
+Este gráfico permite visualizar **padrões regionais de inserção internacional**.
+
+Ajuda a entender **estratégias de desenvolvimento** e **graus de vulnerabilidade externa**, especialmente em países altamente dependentes de exportações.
+
+```{r}
+#| label: graficoserietemporal
+#| warning: false
+#| echo: false
+
+pal <- colorNumeric(palette = "YlOrBr", domain = map_data$NE.EXP.GNFS.ZS, na.color = "#f0f0f0")
+
+leaflet(map_data) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolygons(
+    fillColor = ~ifelse(is.na(NE.EXP.GNFS.ZS), "#d3d3d3", pal(NE.EXP.GNFS.ZS)),
+    color = "white", weight = 0.3,
+    fillOpacity = 0.8, smoothFactor = 0.3,
+    label = lapply(popup_text, htmltools::HTML),
+    highlight = highlightOptions(
+      weight = 2,
+      color = "#666", fillOpacity = 0.9, bringToFront = TRUE
+    )
+  ) %>%
+  addLegend(
+    pal = pal, values = ~NE.EXP.GNFS.ZS,
+    title = "Exportações (% do PIB)", position = "bottomright"
+  )
+ 
+```
+
+**Q1: Como posso destacar a relação entre política industrial e desempenho exportador ao interpretar o gráfico da China?**\
+R: Você pode citar políticas específicas como zonas econômicas especiais, subsídios à exportação e acordos comerciais que ajudaram a China a crescer exponencialmente como exportadora. Essas políticas criaram uma infraestrutura voltada à produção para o exterior, o que explica a curva ascendente nas exportações.
+
+**Q2: Por que os Estados Unidos, mesmo sendo uma potência econômica, têm exportações baixas como % do PIB?**\
+R: Porque os EUA têm um mercado interno muito grande e diversificado. O consumo doméstico impulsiona grande parte do PIB, e a economia é menos dependente do comércio exterior. Além disso, exportam muitos serviços, que nem sempre estão capturados da mesma forma nos dados agregados.
+
+**Q3: O que o gráfico de corte transversal sugere sobre países com alto % de exportações, mas baixa renda per capita?**\
+R: Ele indica que esses países provavelmente exportam produtos de baixo valor agregado, como commodities ou produtos manufaturados simples, frequentemente com mão de obra barata. Isso impede que a receita gerada se traduza em melhoria ampla da renda per capita.
