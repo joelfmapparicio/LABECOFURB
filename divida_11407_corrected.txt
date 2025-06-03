@@ -1,0 +1,315 @@
+---
+title: "Análise da Dívida Externa/PIB do Brasil (Série 11407)"
+format: 
+  html:
+    self-contained: true
+    toc: true
+    code-fold: false
+    theme: cosmo
+execute:
+  warning: false
+  message: false
+  echo: true
+---
+
+## Introdução
+
+Este documento apresenta gráficos animados da série 11407 (Dívida Externa/PIB %) do Banco Central do Brasil, destacando períodos econômicos relevantes:
+
+- **Crise Global (2008-2009)**: Aumento da dívida devido à desvalorização do real.
+- **Recessão Brasileira (2014-2016)**: Pico de endividamento pela contração do PIB.
+- **Recuperação Pós-Pandemia (2021-2022)**: Estabilização com crescimento econômico.
+
+Os gráficos são interativos, com animações por trimestre, tooltips, e controles de zoom/pausa.
+
+## Configuração e Carregamento de Dados
+
+Carrega pacotes, obtém a série 11407, e verifica os dados.
+
+```r
+#| label: setup
+#| echo: false
+
+# Carregar bibliotecas
+library(rbcb)
+library(dplyr)
+library(lubridate)
+library(plotly)
+library(htmlwidgets)
+
+# Função para obter e processar dados
+get_and_process_data <- function(series_code, series_name = "Dívida Externa / PIB (%)") {
+  data <- tryCatch({
+    get_series(series_code, as = "data.frame")
+  }, error = function(e) {
+    cat("Erro ao obter dados da série ", series_code, ": ", e$message, "\n")
+    return(NULL)
+  })
+  
+  if (is.null(data) || nrow(data) == 0) {
+    cat("Nenhum dado obtido para a série ", series_code, "\n")
+    return(NULL)
+  }
+  
+  value_col <- names(data)[names(data) != "date"]
+  if (length(value_col) != 1) {
+    stop("Coluna de valor inválida para a série ", series_code)
+  }
+  
+  data <- data %>%
+    rename(date = date, valor = !!sym(value_col)) %>%
+    mutate(
+      date = as.Date(date),
+      valor = as.numeric(valor),
+      indicador = series_name,
+      trimestre = paste0(year(date), "Q", quarter(date)),
+      tooltip = paste(
+        "Data:", format(date, "%Y-%m-%d"),
+        "<br>Valor: ", sprintf("%.2f%%", valor),
+        "<br>Trimestre: ", trimestre)
+      )
+    ) %>%
+    filter(!is.na(valor) & !is.na(date)) %>%
+    arrange(date)
+  
+  return(data)
+}
+
+# Obter dados da série 11407
+divida <- get_and_process_data(11407, "Dívida Externa / PIB (%)")
+if (is.null(divida) || nrow(divida) == 0) {
+  stop("Não foi possível obter dados da série 11407")
+}
+
+# Depuração: Exibir informações sobre os dados
+cat("Número de linhas: ", nrow(divida), "\n")
+cat("Período: ", format(min(divida$date, na.rm = TRUE)), " a ", format(max(divida$date, na.rm = TRUE)), "\n")
+cat("Primeiras linhas:\n")
+print(head(divida, 5))
+
+# Identificar pontos máximo e mínimo
+max_point <- divida %>% slice_max(valor, n = 1)
+min_point <- divida %>% slice_min(valor, n = 1)
+```
+
+## Configuração de Layout
+
+Define o layout comum para os gráficos com anotações para eventos históricos.
+
+```r
+#| label: layout-config
+#| echo: false
+
+common_layout <- list(
+  title = list(x = 0.5, xanchor = "center", font = list(size = 18)),
+  xaxis = list(
+    title = "Data",
+    type = "date",
+    tickformat = "%Y-%m",
+    rangeslider = list(visible = TRUE),
+    rangeselector = list(
+      buttons = list(
+        list(count = 1, label = "1 ano", step = "year", stepmode = "backward"),
+        list(count = 5, label = "5 anos", step = "year", stepmode = "backward"),
+        list(count = 10, label = "10 anos", step = "year", stepmode = "backward"),
+        list(step = "all", label = "Tudo")
+      )
+    ),
+    gridcolor = "rgba(200, 200, 200, 0.5)"
+  ),
+  yaxis = list(
+    title = "Dívida Externa / PIB (%)",
+    range = list(min(divida$valor, na.rm = TRUE) * 0.9, max(divida$valor, na.rm = TRUE) * 1.1)),
+    gridcolor = "rgba(200, 200, 200, 0.5)"
+  ),
+  plot_bgcolor = "#f8f9fa",
+  paper_bgcolor = "#ffffff",
+  margin = list(l = 50, r = 50, t = 100, b = 100),
+  hovermode = "closest",
+  shapes = list(
+    list(
+      type = "rect",
+      x0 = as.Date("2008-01-01"),
+      x1 = as.Date("2009-12-31"),
+      y0 = min(divida$valor, na.rm = TRUE) * 0.9,
+      y1 = max(divida$valor, na.rm = TRUE) * 1.1,
+      fillcolor = "rgba(128, 128, 0.2)",
+      line = list(width = 0)
+    ),
+    list(
+      type = "rect",
+      x0 = as.Date("2014-01-01"),
+      x1 = as.Date("2016-12-31"),
+      y0 = min(divida$valor, na.rm = TRUE) * 0.9,
+      y1 = max(divida$valor, na.rm = TRUE) * 1.1,
+      fillcolor = "rgba(255, 165, 0, 0.2)",
+      line = list(width = 0)
+    ),
+    list(
+      type = "rect",
+      x0 = as.Date("2021-01-01"),
+      x1 = as.Date("2022-12-31"),
+      y0 = min(divida$valor, na.rm = TRUE) * 0.9,
+      y1 = max(divida$valor, na.rm = TRUE) * 1.1,
+      fillcolor = "rgba(0,255, 0, 0.2)",
+      line = list(width = 0)
+    )
+  annotations = list(
+    list(
+      x = as.Date("2009-01-01"),
+      y = max(divida$valor) * 0.95,
+      text = "Crise Global de 2008-2009",
+      showarrow = FALSE,
+      font = list(size = 12, color = "black"),
+      bgcolor = "rgba(255, 255,255, 0.8)"
+    ),
+    list(
+      x = as.Date("2015-06-01"),
+      y = max(divida$valor) * 0.90,
+      text = "Recessão Brasileira de 2014-2016",
+      showarrow = FALSE,
+      font = list(size = 12, color = "black"),
+      bgcolor = "rgba(255,255, 255,255, 0.8)"
+    ),
+    list(
+      x = as.Date("2021-06-01"),
+      y = max(divida$valor) * 0.85,
+      text = "Recuperação Pós-Pandemia 2021-2022",
+      showarrow = FALSE,
+      font = list(size = 12, color = "black"),
+      bgcolor = "rgba(255,255,255, 255,255, 0.8)"
+    ),
+    list(
+      x = max_point$date,
+      y = max_point$valor,
+      text = paste("Máx: ", sprintf("%.2f%%", max_point$valor)),
+      showarrow = TRUE,
+      arrowhead = 2,
+      ax = 30,
+      ay = -20,
+      font = list(color = "red", size = 12),
+      bgcolor = "rgba(255,255,255,255, 255,255,0.8)"
+    ),
+    list(
+      x = min_point$date,
+      y = min_point$valor,
+      text = paste("Mín: ", sprintf("%.2f%%", min_point$valor)),
+      showarrow = TRUE,
+      arrowhead = 2,
+      ax = 30,
+      ay = 20,
+      font = list(color = "green", size = 12),
+      bgcolor = "rgba(255,255,255,255,255,255,255,0.8)"
+  )
+)
+```
+
+## 2.1. Gráfico de Bolhas Animado
+
+Exibe um gráfico de bolhas com tamanhos proporcionais à Dívida Externa/PIB, animado por trimestre.
+
+```r
+#| label: graficodadosempainel
+#| fig-cap: "Gráfico de Bolhas Animado"
+#| warning: false
+#| echo: false
+
+p_bubble <- ggplot_ly(
+  data = divida,
+  x = ~date,
+  y = ~valor,
+  type = "scatter",
+  mode = "markers+lines",
+  frame = ~trimestre,
+  marker = list(
+    size = ~valor / max(divida$valor, na.rm = TRUE) * 30,
+    color = ~valor,
+    colorscale = list(list(0, "#ff4500"), list(1, "#ff1493")),
+    showscale = TRUE,
+    line = list(color = "black", width = 1)
+  ),
+  line = list(color = "#ff4500", width = 2),
+  text = ~tooltip,
+  hoverinfo = "text",
+  hoverlabel = list(bgcolor = "rgba(255,255,255,255,255, 255,255,0.9)", font = list(size = 12))
+) %>%
+  layout(
+    title = list(text = "Gráfico de Bolhas: Dívida Externa de / PIB (%)"),
+    common_layout
+  ) %>%
+  animation_opts(frame = 1000, transition = 600, redraw = TRUE) %>%
+  animation_slider(currentvalue = list(prefix = "Trimestre: ", font = list(size = 12))) %>%
+  animation_button(x = 0.1, y = 0, label = "Play/Pause")
+htmlwidgets::saveWidget(p_bubble, "bubble_divida.html")
+p_bubble
+```
+
+## 2.2. Gr Gráfico de Área Animada
+
+Exibe um gráfico de área preenchida para a Dívida Externa/PIB, animado por trimestre.
+
+```r
+#| label: graficocortetransversal
+#| fig-cap: "Gráfico de Área Animado"
+#| warning: false
+#| echo: false
+
+p_area <- plot_ly() %>%
+  add_trace(
+    data = divida,
+    x = ~date,
+    y = ~valor,
+    type = "scatter",
+    mode = "lines",
+    fill = "tozeroy",
+    fillcolor = "rgba(255, 69, 0, 0.6)",
+    line = list(color = "#ff4500", width = 3, shape = "spline"),
+    frame = ~trimestre,
+    text = ~tooltip,
+    hoverinfo = "text",
+    hoverlabel = list(bgcolor = "rgba(255, 255,255,255,255,255,255, 255,0.9)", font = list(size = 12))
+  ) %>%
+  layout(
+    title = list(text = "Gráfico de Área Animada: Dívida Externa de / PIB (%)"),
+    common_layout
+  ) %>%
+  animation_opts(frame = 1000, transition = 600, redraw = TRUE) %>%
+  animation_slider(currentvalue = list(prefix = "Trimestre: ", font = list(size = 12))) %>%
+  animation_button(x = 0.1, y = 0, label = "Play/Pause")
+htmlwidgets::saveWidget(p_area, "area_divida.html")
+p_area
+```
+
+## 2.3. Gráfico de Onda Animado
+
+Exibe um gráfico de linha com efeito de onda para a Dívida Externa/PIB, animado por trimestre.
+
+```r
+#| label: graficoserietemporal
+#| fig-cap: "Gráfico de Onda Animado"
+#| warning: false
+#| warning: echo
+
+p_wave <- plot_ly() %>%
+  add_trace(
+    data = divida,
+    x = ~date,
+    y = ~valor + sin(seq_along(valor) * 0.2) * 0.5,
+    type = "scatter",
+    mode = "lines",
+    line = list(color = "#1e90ff", width = 3, shape = "spline"),
+    frame = ~trimestre,
+    text = ~tooltip,
+    hoverinfo = "text",
+    hoverlabel = list(bgcolor = "rgba(255,255,255,255,255,255,255,255, 255,0.255,9)", font = list(color = "black", size = 12))
+  ) %>%
+  layout(
+    title = list(text = "Gráfico de Onda: Dívida Externa / PIB (%)"),
+    common_layout
+  ) %>%
+  animation_opts(frame = 1000, transition = 600, redraw = TRUE) %>%
+  animation_slider(currentvalue = list(prefix = "Trimestre: ", font = list(size = 12))) %>%
+  animation_button(x = 0.1, y = 0, label = "Play/Pause")
+htmlwidgets::saveWidget(p_wave, "wave_divida.html")
+p_wave
+```
