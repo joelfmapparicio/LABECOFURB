@@ -1,0 +1,335 @@
+---
+title: "Endrews Soares, Giulio Maiolino,João Victor Schwartz e Joel Fernando Maciel Apparicio"
+format: html
+editor: visual
+---
+
+```{r}
+#| label: load-packages
+#| include: false
+library(WDI)
+library(tidyverse)
+library(sf)
+library(rnaturalearth)
+library(leaflet)
+library(plotly)
+library(countrycode)
+library(WDI)
+library(ggplot2)
+library(gganimate)
+library(dplyr)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(sf)
+library(countrycode)
+library(gifski)
+library(tidyr)
+library(scales)
+dadosexp <- WDI(country = "all",
+                indicator = "NE.EXP.GNFS.ZS",
+                start = 2000,
+                end = 2022,
+                extra = TRUE)
+
+# 2. Limpeza: filtrar apenas países reais e criar código ISO3
+dadosexp <- dadosexp %>%
+  filter(region != "Aggregates") %>%
+  mutate(iso3c = countrycode(iso2c, origin = "iso2c", destination = "iso3c")) %>%
+  filter(!is.na(iso3c))
+
+# 3. Criar grade completa com todos os países e anos
+anos <- 2000:2022
+paises <- unique(dadosexp$iso3c)
+grade <- expand.grid(iso3c = paises, year = anos)
+
+# 4. Unir grade com dados reais
+dadosexp_completo <- left_join(grade, dadosexp, by = c("iso3c", "year"))
+
+# 5. Criar faixas de exportações (% do PIB)
+dadosexp_completo <- dadosexp_completo %>%
+  mutate(faixa_export = case_when(
+    is.na(NE.EXP.GNFS.ZS) ~ "Sem dado",
+    NE.EXP.GNFS.ZS <= 20 ~ "0–20%",
+    NE.EXP.GNFS.ZS <= 40 ~ "21–40%",
+    NE.EXP.GNFS.ZS <= 60 ~ "41–60%",
+    NE.EXP.GNFS.ZS <= 80 ~ "61–80%",
+    NE.EXP.GNFS.ZS <= 100 ~ "81–100%",
+    NE.EXP.GNFS.ZS > 100 ~ "+100%"
+  ))
+
+# 6. Definir ordem das faixas na legenda
+dadosexp_completo$faixa_export <- factor(
+  dadosexp_completo$faixa_export,
+  levels = c("0–20%", "21–40%", "41–60%", "61–80%", "81–100%", "+100%", "Sem dado")
+)
+
+# 7. Carregar mapa base
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+# 8. Juntar geometria com dados
+map_data <- left_join(world, dadosexp_completo, by = c("iso_a3" = "iso3c"))
+
+# 9. Definir cores para cada faixa
+cores_personalizadas <- c(
+  "0–20%" = "#ffffcc",
+  "21–40%" = "#a1dab4",
+  "41–60%" = "#41b6c4",
+  "61–80%" = "#2c7fb8",
+  "81–100%" = "#253494",
+  "+100%" = "#081d58",
+  "Sem dado" = "gray90"
+)
+
+dados <- WDI(
+  country = "all",
+  indicator = c("NE.EXP.GNFS.ZS", "NY.GDP.MKTP.KD.ZG"),
+  start = 2020,
+  end = 2020,
+  extra = TRUE
+)
+
+# 2. Limpeza: filtrar apenas países reais e criar código ISO3
+dados <- dados %>%
+  filter(region != "Aggregates") %>%
+  mutate(iso3c = countrycode::countrycode(iso2c, origin = "iso2c", destination = "iso3c")) %>%
+  filter(!is.na(iso3c))
+
+# 3. Criar faixas de exportações (% do PIB)
+dados <- dados %>%
+  mutate(faixa_export = case_when(
+    is.na(NE.EXP.GNFS.ZS) ~ "Sem dado",
+    NE.EXP.GNFS.ZS <= 20 ~ "0–20%",
+    NE.EXP.GNFS.ZS <= 40 ~ "21–40%",
+    NE.EXP.GNFS.ZS <= 60 ~ "41–60%",
+    NE.EXP.GNFS.ZS <= 80 ~ "61–80%",
+    NE.EXP.GNFS.ZS <= 100 ~ "81–100%",
+    NE.EXP.GNFS.ZS > 100 ~ "+100%"
+  )) %>%
+  mutate(faixa_export = factor(
+    faixa_export,
+    levels = c("0–20%", "21–40%", "41–60%", "61–80%", "81–100%", "+100%", "Sem dado")
+  ))
+
+# 4. Carregar mapa base
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+# 5. Juntar geometria com dados
+map_data_la <- left_join(world, dados, by = c("iso_a3" = "iso3c"))
+
+# 6. Definir paleta de cores para as faixas de exportações
+cores_personalizadas <- c(
+  "0–20%" = "#ffffcc",
+  "21–40%" = "#a1dab4",
+  "41–60%" = "#41b6c4",
+  "61–80%" = "#2c7fb8",
+  "81–100%" = "#253494",
+  "+100%" = "#081d58",
+  "Sem dado" = "gray90"
+)
+
+# 7. Criar paleta para o leaflet
+pal <- colorFactor(
+  palette = cores_personalizadas,
+  domain = map_data$faixa_export
+)
+dadoslpo <- WDI(
+  country = "all",
+  indicator = "FI.RES.TOTL.CD",
+  start = 2000,
+  end = 2023,
+  extra = TRUE
+)
+
+# 2. Limpar dados
+dados_limpos <- dadoslpo %>%
+  filter(region != "Aggregates") %>%
+  select(iso3c, country, year, reservas = FI.RES.TOTL.CD)
+
+# 3. Carregar mapa base (sf)
+mapa_base <- ne_countries(scale = "medium", returnclass = "sf") %>%
+  select(iso_a3, geometry)
+
+# 4. Juntar dados com mapa base
+mapa_dados <- dados_limpos %>%
+  inner_join(mapa_base, by = c("iso3c" = "iso_a3")) %>%
+  st_as_sf()  # garante que é sf
+
+# 5. Calcular log (para escala)
+mapa_dados <- mapa_dados %>%
+  mutate(log_reservas = log10(reservas + 1))
+```
+
+# **Análise de Choques Externos sob a Perspectiva** **do Crescimento por Exportações**
+
+**Introdução**
+
+A globalização produtiva e comercial das últimas décadas intensificou os laços econômicos entre
+nações, elevando o peso das exportações nas estratégias de crescimento de muitos países, sobretudo
+nos emergentes. Sob essa dinâmica, surge uma questão central para a análise macroeconômica
+internacional:
+
+**"Crescimentos baseados em exportações tornam os países mais vulneráveis a
+choques externos do que crescimentos baseados em demanda interna?"**
+
+Países orientados para o exterior se beneficiam da inserção nas cadeias globais de valor, acesso a
+mercados mais amplos e ganhos de produtividade via especialização. No entanto, essa mesma
+exposição os torna suscetíveis a instabilidades globais, como crises financeiras, recessões em países
+parceiros ou disrupções logísticas. Em contrapartida, modelos baseados na demanda interna oferecem
+maior capacidade de amortecimento frente a choques externos, mas exigem um mercado interno
+robusto e políticas públicas consistentes.
+Este relatório analisa essa questão utilizando dados do Banco Mundial (WDI), com foco em indicadores
+chave como exportações de bens e serviços (% do PIB), reservas internacionais, termos de troca e
+variações do PIB real per capita durante as crises globais de 2008 e 2020. A abordagem combina séries
+temporais globais, visualizações espaciais e correlações entre vulnerabilidade externa e integração
+comercial.
+
+#  Exportações de Bens e Serviços (% do PIB)
+
+O gráfico abaixo apresenta a média mundial do indicador NE.EXP.GNFS.ZS (exportações como % do PIB) ao longo dos últimos 30 anos. Observa-se um crescimento constante até 2008, quando ocorreu a crise financeira global, seguido de queda abrupta, recuperação parcial na década seguinte e nova queda em 2020 com a pandemia da COVID-19.
+Análise: - Países com mais de 40% do PIB vinculado a exportações são estruturalmente mais sensíveis a
+flutuações da demanda global. A interdependência comercial leva à transmissão quase imediata de
+choques de grandes economias (como EUA ou China) para seus parceiros comerciais. Economias com
+maior proporção de consumo e investimento interno no PIB tendem a amortecer os impactos externos
+e manter maior estabilidade. A composição das exportações também importa: exportações baseadas
+em commodities expõem os países à volatilidade dos preços internacionais.
+
+```{r}
+#| label: graficodadosempainel
+#| warning: false
+#| echo: false
+
+ggplot(map_data) +
+  geom_sf(aes(fill = faixa_export, group = iso_a3), color = "gray80", size = 0.1) +
+  scale_fill_manual(
+    values = cores_personalizadas,
+    name = "Exportações (% do PIB)"
+  ) +
+  theme_minimal() +
+  labs(
+    title = "Exportações de Bens e Serviços (% do PIB)",
+    subtitle = "Ano: {frame_time}",
+    caption = "Fonte: World Development Indicators (WDI)"
+  ) +
+  transition_time(year) +
+  ease_aes("linear") +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(size = 11, face = "bold"),
+    legend.text = element_text(size = 9),
+    plot.title = element_text(size = 18, face = "bold"),
+    plot.subtitle = element_text(size = 14),
+    plot.caption = element_text(size = 9)
+  )
+```
+
+#  Impacto no PIB Real Per Capita: Choque de 2020
+
+A partir dos dados NY.GDP.PCAP.KD , calculou-se a variação percentual do PIB real per capita durante
+o ano de crise. O mapa abaixo mostram a intensidade da queda por país:
+2020: Crise sanitária global com impacto mais simétrico, afetando a mobilidade, turismo,
+serviços e cadeias de suprimentos. A queda do PIB foi generalizada, mas a intensidade variou
+com base na estrutura econômica e na capacidade de resposta dos governos. Padrões observados nos mapas: Economias asiáticas com foco interno e políticas industriais, como Índia e Indonésia, apresentaram resiliência comparativa. Economias muito abertas e com dependência de turismo (como Tailândia, Espanha, Maldivas) sofreram quedas severas. Países da América Latina e África, com baixa diversificação e exportação de commodities, enfrentaram crises prolongadas. Além disso, países com menor capacidade fiscal e sanitária tiveram dificuldade de implementar estímulos e contenções adequadas, exacerbando a retração econômica.
+
+```{r}
+#| label: grafico2
+#| warning: false
+#| echo: false
+
+leaflet(data = map_data_la) %>%
+  addTiles() %>%
+  addPolygons(
+    fillColor = ~pal(faixa_export),
+    fillOpacity = 0.7,
+    color = "gray80",
+    weight = 1,
+    popup = ~paste(
+      "<b>", name, "</b><br>",
+      "Exportações (% do PIB): ", round(NE.EXP.GNFS.ZS, 1), "%<br>",
+      "Crescimento do PIB (%): ", round(NY.GDP.MKTP.KD.ZG, 1), "%"
+    )
+  ) %>%
+  addLegend(
+    position = "bottomright",
+    pal = pal,
+    values = ~faixa_export,
+    title = "Exportações (% do PIB) em 2020",
+    opacity = 0.7
+  ) %>%
+  setView(lng = 0, lat = 20, zoom = 2)
+```
+
+#  Reservas Cambiais e Termos de Troca
+
+**As reservas internacionais** (FI.RES.TOTL.CD) funcionam como um "colchão" de segurança para
+enfrentar crises externas, permitindo que os governos intervenham no câmbio, cumpram obrigações
+internacionais e reduzam o risco-país. Já os termos de troca (NE.TRM.TRAD.XD) refletem o poder de
+compra das exportações em relação às importações, funcionando como um termômetro do equilíbrio
+estrutural do comércio externo.
+**Durante os choques de 2008 e 2020:** - Países com altas reservas cambiais (como China, Suíça e Japão)
+conseguiram estabilizar suas moedas, manter credibilidade e adotar políticas anticíclicas. - Nações com
+reservas baixas, como diversos países africanos e latino-americanos, enfrentaram crises cambiais e
+quedas bruscas nas importações essenciais. - Os termos de troca pioraram especialmente para países
+exportadores de matérias-primas, que viram seus produtos se desvalorizar enquanto os preços de bens
+manufaturados e insumos importados se mantiveram elevados.
+Em resumo, as reservas funcionam como linha de defesa de curto prazo, enquanto os termos de troca
+indicam vulnerabilidade estrutural. Ambos são fundamentais para entender a resiliência ou fragilidade
+diante de choques externos.
+
+```{r}
+#| label: grafico3
+#| warning: false
+#| echo: false
+#| 
+ggplot(mapa_dados) +
+  geom_sf(aes(fill = log_reservas), color = "#2c2c2c", size = 0.1) +
+  scale_fill_viridis_c(
+    name = "Reservas Internacionais (USD correntes)",
+    option = "magma",
+    direction = -1,
+    na.value = "#f0f0f0",
+    labels = function(x) dollar_format()(10^x - 1),
+    guide = guide_colorbar(
+      barwidth = 30,          # largura maior da barra
+      barheight = 1.5,        # altura maior da barra
+      ticks = TRUE,
+      ticks.linewidth = 0.7,
+      label.position = "bottom",
+      title.position = "top",
+      title.hjust = 0.5,
+      label.theme = element_text(size = 12, angle = 45, hjust = 1) # rotaciona labels
+    )
+  ) +
+  labs(
+    title = "💰 Reservas Internacionais por País",
+    subtitle = "Ano: {closest_state}",
+    caption = "Fonte: Banco Mundial · Indicador: FI.RES.TOTL.CD"
+  ) +
+  theme_minimal(base_size = 15) +
+  theme(
+    plot.title = element_text(face = "bold", size = 22, hjust = 0.5, color = "#222222"),
+    plot.subtitle = element_text(size = 16, hjust = 0.5, color = "#555555"),
+    plot.caption = element_text(size = 10, hjust = 1, color = "#777777"),
+    legend.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    legend.text = element_text(size = 12),
+    legend.position = "bottom",
+    panel.grid = element_blank(),
+    axis.text = element_blank(),
+    axis.title = element_blank()
+  ) +
+  transition_states(year, transition_length = 2, state_length = 1, wrap = FALSE) +
+  ease_aes("linear")
+```
+
+# Conclusão
+ 
+
+A análise empírica reforça a hipótese de que economias altamente integradas ao mercado externo,
+especialmente aquelas com baixa diversificação e reservas cambiais limitadas, tendem a ser mais
+vulneráveis a choques externos.
+
+Por outro lado, exportações podem ser uma fonte de crescimento robusto e resiliência se
+acompanhadas de: Diversificação geográfica e setorial das vendas externas, Política cambial flexível e
+reservas suficientes, Instituições fiscais e monetárias sólidas, Capacidade de estímulo interno e
+proteção social Modelos baseados na demanda interna oferecem maior autonomia em contextos de crise, mas também exigem uma base produtiva diversificada, distribuição de renda equilibrada e estabilidade institucional.
+
+Assim, a resposta à pergunta inicial é: sim, o crescimento por exportações pode aumentar a vulnerabilidade externa, mas esse efeito depende criticamente do grau de dependência, da diversificação produtiva e da capacidade de resposta de cada país. O equilíbrio entre orientação externa e fortalecimento do mercado interno é a chave para uma economia menos exposta e mais resiliente no longo prazo.
